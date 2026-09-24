@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Superstore Sales Performance & Revenue Analytics</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // Try cdnjs first; if that fails to load (network/CSP block specific to
+  // that host), automatically fall back to jsdelivr before giving up.
+  (function loadChartJs() {
+    var CDNS = [
+      'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js',
+      'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'
+    ];
+    function tryLoad(i) {
+      if (i >= CDNS.length) { window.__chartLoadFailed = true; return; }
+      var s = document.createElement('script');
+      s.src = CDNS[i];
+      s.onload = function(){ window.__chartLoaded = true; };
+      s.onerror = function(){ tryLoad(i + 1); };
+      document.head.appendChild(s);
+    }
+    tryLoad(0);
+  })();
+</script>
+<style>
+:root{
+  --ink:#16202b; --paper:#f7f5f0; --panel:#ffffff; --line:#dcd6c9;
+  --muted:#6b7280; --accent:#2f6f4f; --accent-soft:#e4efe6;
+  --loss:#b5432f; --loss-soft:#f7e6e1;
+  --gold:#b08b2a;
+  --radius:2px;
+  box-sizing:border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#e9e6de; --paper:#14181a; --panel:#1b2023; --line:#31363a;
+    --muted:#9aa1a6; --accent:#6fbd93; --accent-soft:#1e2b23;
+    --loss:#e08669; --loss-soft:#2b1c18; --gold:#d8b85a;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e9e6de; --paper:#14181a; --panel:#1b2023; --line:#31363a;
+  --muted:#9aa1a6; --accent:#6fbd93; --accent-soft:#1e2b23;
+  --loss:#e08669; --loss-soft:#2b1c18; --gold:#d8b85a;
+}
+*{box-sizing:border-box;}
+html{scroll-padding-top: env(safe-area-inset-top, 0px);}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',monospace;}
+header{
+  padding:2.2rem 2rem 1.4rem; border-bottom:1px solid var(--line);
+  display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:1rem;
+}
+.title-block h1{
+  font-family:'Fraunces',serif; font-weight:600; font-size:2rem; margin:0 0 .3rem;
+  letter-spacing:-.01em;
+}
+.title-block p{margin:0; color:var(--muted); font-size:.92rem; max-width:46ch;}
+.range{font-size:.78rem; color:var(--muted); text-align:right;}
+nav{
+  display:flex; gap:0; border-bottom:1px solid var(--line); overflow-x:auto;
+  padding:0 2rem; background:var(--paper); position:sticky; top:0; z-index:5;
+}
+nav button{
+  font-family:'Inter',sans-serif; font-size:.86rem; font-weight:500; color:var(--muted);
+  background:none; border:none; padding:.9rem 1rem; cursor:pointer; white-space:nowrap;
+  border-bottom:2px solid transparent; transition:color .15s, border-color .15s;
+}
+nav button.active{color:var(--ink); border-bottom-color:var(--accent);}
+nav button:hover{color:var(--ink);}
+main{padding:1.8rem 2rem 4rem; max-width:1180px; margin:0 auto;}
+.view{display:none;}
+.view.active{display:block;}
+.kpis{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+  background:var(--line); border:1px solid var(--line); margin-bottom:1.6rem;
+}
+.kpi{background:var(--panel); padding:1rem 1.1rem;}
+.kpi .label{font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+.kpi .value{font-family:'Fraunces',serif; font-size:1.5rem; font-weight:600; margin-top:.2rem;}
+.kpi .value.pos{color:var(--accent);}
+.kpi .value.neg{color:var(--loss);}
+.grid2{display:grid; grid-template-columns:1.4fr 1fr; gap:1.4rem; margin-bottom:1.4rem;}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:1.4rem; margin-bottom:1.4rem;}
+@media (max-width:820px){.grid2,.grid3{grid-template-columns:1fr;}}
+.panel{
+  background:var(--panel); border:1px solid var(--line); padding:1.2rem 1.3rem;
+}
+.panel h3{
+  font-family:'Fraunces',serif; font-size:1rem; font-weight:600; margin:0 0 .2rem;
+}
+.panel .sub{font-size:.78rem; color:var(--muted); margin-bottom:.9rem;}
+.chart-wrap{position:relative; height:280px;}
+.chart-wrap.tall{height:340px;}
+table{width:100%; border-collapse:collapse; font-size:.84rem;}
+th{
+  text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--muted); font-weight:600; padding:.5rem .5rem; border-bottom:1px solid var(--line);
+}
+td{padding:.5rem .5rem; border-bottom:1px solid var(--line);}
+td.num, th.num{text-align:right; font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;}
+tr:last-child td{border-bottom:none;}
+.pos-text{color:var(--accent);}
+.neg-text{color:var(--loss);}
+.bar-cell{position:relative;}
+.bar-track{height:6px; background:var(--line); width:100%; margin-top:4px; overflow:hidden;}
+.bar-fill{height:100%; background:var(--accent);}
+.bar-fill.neg{background:var(--loss);}
+.table-scroll{overflow-x:auto;}
+.note{
+  font-size:.78rem; color:var(--muted); border-left:2px solid var(--gold); padding:.5rem .9rem;
+  background:var(--accent-soft); margin-top:1rem;
+}
+.insight{
+  border-left:2px solid var(--accent); padding:.6rem 1rem; margin:.9rem 0; font-size:.86rem;
+  background:var(--panel);
+}
+.insight.warn{border-left-color:var(--loss);}
+footer{padding:2rem; text-align:center; color:var(--muted); font-size:.75rem; border-top:1px solid var(--line);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>Superstore Sales Performance</h1>
+    <p>Revenue, profitability, and customer analytics across 5111 orders and 804 customers.</p>
+  </div>
+  <div class="range mono">2023-01-03 &ndash; 2026-12-30<br>US &amp; Canada retail orders</div>
+</header>
+
+<nav>
+  <button data-view="overview" class="active">Overview</button>
+  <button data-view="profitability">Profitability</button>
+  <button data-view="customers">Customers &amp; Products</button>
+  <button data-view="geography">Geography</button>
+</nav>
+
+<main>
+
+  <div class="kpis" id="kpiStrip"></div>
+
+  <!-- OVERVIEW -->
+  <section class="view active" id="view-overview">
+    <div class="panel" style="margin-bottom:1.4rem;">
+      <h3>Monthly revenue &amp; profit</h3>
+      <div class="sub">Jan 2023 &ndash; Dec 2026, order month</div>
+      <div class="chart-wrap tall"><canvas id="chartMonthly"></canvas></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Revenue by region</h3>
+        <div class="sub">Bar length = revenue, label = margin</div>
+        <div class="chart-wrap"><canvas id="chartRegion"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>Revenue by category</h3>
+        <div class="chart-wrap"><canvas id="chartCategory"></canvas></div>
+      </div>
+    </div>
+    <div class="insight">Revenue has grown every year since 2023, and __YOY__ from 2025 to 2026 &mdash; but margin has stayed roughly flat near 13%, so growth is not yet translating into proportionally higher profit.</div>
+  </section>
+
+  <!-- PROFITABILITY -->
+  <section class="view" id="view-profitability">
+    <div class="grid2">
+      <div class="panel">
+        <h3>Margin by discount band</h3>
+        <div class="sub">Every line item, grouped by discount applied</div>
+        <div class="chart-wrap"><canvas id="chartDiscount"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>Ship mode</h3>
+        <div class="sub">Avg. days to ship vs. order volume</div>
+        <div class="chart-wrap"><canvas id="chartShip"></canvas></div>
+      </div>
+    </div>
+    <div class="insight warn">Margin turns negative once discounts exceed ~20%. Line items discounted 60%+ lost money overall &mdash; discounting past ~20% is destroying more profit than it recovers in volume.</div>
+    <div class="panel">
+      <h3>Category &amp; sub-category profitability</h3>
+      <div class="sub">Sorted by profit, worst first</div>
+      <div class="table-scroll"><table id="tblSubcat">
+        <thead><tr><th>Category</th><th>Sub-Category</th><th class="num">Revenue</th><th class="num">Profit</th><th class="num">Margin</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- CUSTOMERS & PRODUCTS -->
+  <section class="view" id="view-customers">
+    <div class="grid2">
+      <div class="panel">
+        <h3>Top 10 customers by revenue</h3>
+        <div class="table-scroll"><table id="tblCustomers">
+          <thead><tr><th>Customer</th><th>Segment</th><th class="num">Revenue</th><th class="num">Profit</th><th class="num">Orders</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h3>Segment mix</h3>
+        <div class="chart-wrap"><canvas id="chartSegment"></canvas></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Top 10 products by profit</h3>
+        <div class="table-scroll"><table id="tblTopProducts">
+          <thead><tr><th>Product</th><th class="num">Revenue</th><th class="num">Profit</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+      <div class="panel">
+        <h3>10 biggest loss-makers</h3>
+        <div class="table-scroll"><table id="tblBottomProducts">
+          <thead><tr><th>Product</th><th class="num">Revenue</th><th class="num">Profit</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GEOGRAPHY -->
+  <section class="view" id="view-geography">
+    <div class="panel">
+      <h3>Top 10 states by revenue</h3>
+      <div class="sub">Profit shown alongside &mdash; note the states with strong revenue but negative profit</div>
+      <div class="table-scroll"><table id="tblState">
+        <thead><tr><th>State</th><th class="num">Revenue</th><th class="num">Profit</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div class="note">Texas, Pennsylvania, Illinois and Ohio each generate six-figure revenue but post a net loss &mdash; a strong signal to review regional discount policy and freight-heavy categories (Furniture, Machines) in those states.</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>Built from the Sample Superstore dataset &middot; cleaned with pandas, analyzed with SQL &middot; 5111 orders, 10,194 line items</footer>
+
+<script>
+const DATA = {"kpis": {"revenue": 2326534.35, "profit": 292296.81, "margin": 12.56, "orders": 5111, "customers": 804, "aov": 455.2, "date_min": "2023-01-03", "date_max": "2026-12-30"}, "monthly": [{"Order Year-Month": "2023-01", "revenue": 14518.06, "profit": 2539.39, "orders": 33, "margin": 17.49}, {"Order Year-Month": "2023-02", "revenue": 4519.89, "profit": 862.31, "orders": 28, "margin": 19.08}, {"Order Year-Month": "2023-03", "revenue": 56933.91, "profit": 693.45, "orders": 72, "margin": 1.22}, {"Order Year-Month": "2023-04", "revenue": 28295.34, "profit": 3488.84, "orders": 66, "margin": 12.33}, {"Order Year-Month": "2023-05", "revenue": 26319.77, "profit": 3196.39, "orders": 72, "margin": 12.14}, {"Order Year-Month": "2023-06", "revenue": 34669.48, "profit": 4999.76, "orders": 67, "margin": 14.42}, {"Order Year-Month": "2023-07", "revenue": 33946.39, "profit": -841.48, "orders": 65, "margin": -2.48}, {"Order Year-Month": "2023-08", "revenue": 28918.34, "profit": 5765.22, "orders": 75, "margin": 19.94}, {"Order Year-Month": "2023-09", "revenue": 82670.43, "profit": 8593.63, "orders": 134, "margin": 10.4}, {"Order Year-Month": "2023-10", "revenue": 32413.34, "profit": 3469.17, "orders": 81, "margin": 10.7}, {"Order Year-Month": "2023-11", "revenue": 78826.96, "profit": 9362.96, "orders": 152, "margin": 11.88}, {"Order Year-Month": "2023-12", "revenue": 72008.31, "profit": 9554.66, "orders": 150, "margin": 13.27}, {"Order Year-Month": "2024-01", "revenue": 18461.92, "profit": -3189.8, "orders": 31, "margin": -17.28}, {"Order Year-Month": "2024-02", "revenue": 11951.41, "profit": 2813.85, "orders": 36, "margin": 23.54}, {"Order Year-Month": "2024-03", "revenue": 39978.63, "profit": 9930.61, "orders": 81, "margin": 24.84}, {"Order Year-Month": "2024-04", "revenue": 34195.21, "profit": 4187.5, "orders": 72, "margin": 12.25}, {"Order Year-Month": "2024-05", "revenue": 30246.95, "profit": 4677.14, "orders": 75, "margin": 15.46}, {"Order Year-Month": "2024-06", "revenue": 24797.29, "profit": 3335.56, "orders": 68, "margin": 13.45}, {"Order Year-Month": "2024-07", "revenue": 28765.32, "profit": 3288.65, "orders": 66, "margin": 11.43}, {"Order Year-Month": "2024-08", "revenue": 37057.0, "profit": 5371.63, "orders": 69, "margin": 14.5}, {"Order Year-Month": "2024-09", "revenue": 64627.05, "profit": 8220.03, "orders": 142, "margin": 12.72}, {"Order Year-Month": "2024-10", "revenue": 31407.13, "profit": 2817.97, "orders": 88, "margin": 8.97}, {"Order Year-Month": "2024-11", "revenue": 75972.56, "profit": 12474.79, "orders": 158, "margin": 16.42}, {"Order Year-Month": "2024-12", "revenue": 75532.56, "profit": 8093.06, "orders": 167, "margin": 10.71}, {"Order Year-Month": "2025-01", "revenue": 18830.33, "profit": 2916.02, "orders": 50, "margin": 15.49}, {"Order Year-Month": "2025-02", "revenue": 22978.82, "profit": 5004.58, "orders": 45, "margin": 21.78}, {"Order Year-Month": "2025-03", "revenue": 53031.07, "profit": 3707.89, "orders": 88, "margin": 6.99}, {"Order Year-Month": "2025-04", "revenue": 38829.16, "profit": 2991.66, "orders": 90, "margin": 7.7}, {"Order Year-Month": "2025-05", "revenue": 57042.84, "profit": 8676.7, "orders": 109, "margin": 15.21}, {"Order Year-Month": "2025-06", "revenue": 40937.15, "profit": 4926.32, "orders": 100, "margin": 12.03}, {"Order Year-Month": "2025-07", "revenue": 40300.5, "profit": 4559.88, "orders": 97, "margin": 11.31}, {"Order Year-Month": "2025-08", "revenue": 31716.81, "profit": 2317.5, "orders": 91, "margin": 7.31}, {"Order Year-Month": "2025-09", "revenue": 73521.66, "profit": 9370.1, "orders": 195, "margin": 12.74}, {"Order Year-Month": "2025-10", "revenue": 59831.0, "profit": 16256.84, "orders": 107, "margin": 27.17}, {"Order Year-Month": "2025-11", "revenue": 79411.97, "profit": 4011.41, "orders": 183, "margin": 5.05}, {"Order Year-Month": "2025-12", "revenue": 97502.28, "profit": 17926.3, "orders": 185, "margin": 18.39}, {"Order Year-Month": "2026-01", "revenue": 44259.21, "profit": 7231.64, "orders": 71, "margin": 16.34}, {"Order Year-Month": "2026-02", "revenue": 20301.13, "profit": 1613.87, "orders": 53, "margin": 7.95}, {"Order Year-Month": "2026-03", "revenue": 60728.48, "profit": 15013.09, "orders": 121, "margin": 24.72}, {"Order Year-Month": "2026-04", "revenue": 36779.04, "profit": 957.53, "orders": 117, "margin": 2.6}, {"Order Year-Month": "2026-05", "revenue": 45155.48, "profit": 6299.81, "orders": 121, "margin": 13.95}, {"Order Year-Month": "2026-06", "revenue": 53056.08, "profit": 8246.57, "orders": 134, "margin": 15.54}, {"Order Year-Month": "2026-07", "revenue": 45989.5, "profit": 7006.5, "orders": 112, "margin": 15.24}, {"Order Year-Month": "2026-08", "revenue": 64129.76, "profit": 9488.07, "orders": 114, "margin": 14.8}, {"Order Year-Month": "2026-09", "revenue": 88064.53, "profit": 11050.8, "orders": 231, "margin": 12.55}, {"Order Year-Month": "2026-10", "revenue": 83474.78, "profit": 10670.53, "orders": 151, "margin": 12.78}, {"Order Year-Month": "2026-11", "revenue": 118454.5, "profit": 9692.1, "orders": 262, "margin": 8.18}, {"Order Year-Month": "2026-12", "revenue": 85175.03, "profit": 8655.83, "orders": 236, "margin": 10.16}], "yearly": [{"Order Year": 2023, "revenue": 494040.21, "profit": 51684.3, "orders": 995, "margin": 10.46}, {"Order Year": 2024, "revenue": 472993.03, "profit": 62020.97, "orders": 1053, "margin": 13.11}, {"Order Year": 2025, "revenue": 613933.58, "profit": 82665.2, "orders": 1340, "margin": 13.46}, {"Order Year": 2026, "revenue": 745567.53, "profit": 95926.35, "orders": 1723, "margin": 12.87}], "region": [{"Region": "West", "revenue": 739813.61, "profit": 110798.82, "orders": 1635, "margin": 14.98}, {"Region": "East", "revenue": 691828.17, "profit": 94883.26, "orders": 1475, "margin": 13.71}, {"Region": "Central", "revenue": 503170.67, "profit": 39865.31, "orders": 1179, "margin": 7.92}, {"Region": "South", "revenue": 391721.9, "profit": 46749.43, "orders": 822, "margin": 11.93}], "category": [{"Category": "Technology", "revenue": 839893.28, "profit": 146543.38, "orders": 1560, "margin": 17.45}, {"Category": "Furniture", "revenue": 754747.76, "profit": 19730.0, "orders": 1819, "margin": 2.61}, {"Category": "Office Supplies", "revenue": 731893.31, "profit": 126023.44, "orders": 3812, "margin": 17.22}], "subcat": [{"Category": "Furniture", "Sub-Category": "Tables", "revenue": 208020.18, "profit": -17753.21, "orders": 314, "margin": -8.53}, {"Category": "Furniture", "Sub-Category": "Bookcases", "revenue": 115361.2, "profit": -3632.07, "orders": 228, "margin": -3.15}, {"Category": "Office Supplies", "Sub-Category": "Supplies", "revenue": 46725.5, "profit": -1171.39, "orders": 189, "margin": -2.51}, {"Category": "Office Supplies", "Sub-Category": "Fasteners", "revenue": 8532.24, "profit": 2428.64, "orders": 226, "margin": 28.46}, {"Category": "Technology", "Sub-Category": "Machines", "revenue": 189925.03, "profit": 3461.98, "orders": 114, "margin": 1.82}, {"Category": "Office Supplies", "Sub-Category": "Labels", "revenue": 12695.04, "profit": 5572.78, "orders": 348, "margin": 43.9}, {"Category": "Office Supplies", "Sub-Category": "Art", "revenue": 27659.01, "profit": 6653.2, "orders": 756, "margin": 24.05}, {"Category": "Office Supplies", "Sub-Category": "Envelopes", "revenue": 16528.36, "profit": 6988.02, "orders": 251, "margin": 42.28}, {"Category": "Furniture", "Sub-Category": "Furnishings", "revenue": 95598.13, "profit": 13891.74, "orders": 919, "margin": 14.53}, {"Category": "Office Supplies", "Sub-Category": "Appliances", "revenue": 108213.18, "profit": 18329.48, "orders": 459, "margin": 16.94}, {"Category": "Office Supplies", "Sub-Category": "Storage", "revenue": 224644.55, "profit": 21285.11, "orders": 787, "margin": 9.48}, {"Category": "Furniture", "Sub-Category": "Chairs", "revenue": 335768.25, "profit": 27223.53, "orders": 591, "margin": 8.11}, {"Category": "Office Supplies", "Sub-Category": "Binders", "revenue": 207354.88, "profit": 31426.1, "orders": 1339, "margin": 15.16}, {"Category": "Office Supplies", "Sub-Category": "Paper", "revenue": 79540.54, "profit": 34511.51, "orders": 1205, "margin": 43.39}, {"Category": "Technology", "Sub-Category": "Accessories", "revenue": 167380.32, "profit": 41936.64, "orders": 718, "margin": 25.05}, {"Category": "Technology", "Sub-Category": "Phones", "revenue": 331842.64, "profit": 45050.83, "orders": 826, "margin": 13.58}, {"Category": "Technology", "Sub-Category": "Copiers", "revenue": 150745.29, "profit": 56093.94, "orders": 70, "margin": 37.21}], "segment": [{"Segment": "Consumer", "revenue": 1170659.79, "profit": 136371.45, "orders": 2628, "margin": 11.65}, {"Segment": "Corporate", "revenue": 715806.13, "profit": 94249.64, "orders": 1552, "margin": 13.17}, {"Segment": "Home Office", "revenue": 440068.43, "profit": 61675.73, "orders": 931, "margin": 14.02}], "discount": [{"discount_band": "0% (none)", "revenue": 1105323.79, "profit": 326718.59, "orders": 2714, "margin": 29.56}, {"discount_band": "1-20%", "revenue": 856450.41, "profit": 101598.91, "orders": 2541, "margin": 11.86}, {"discount_band": "21-40%", "revenue": 235465.28, "profit": -35990.96, "orders": 404, "margin": -15.29}, {"discount_band": "41-60%", "revenue": 71509.45, "profit": -29163.89, "orders": 206, "margin": -40.78}, {"discount_band": "60%+", "revenue": 57785.41, "profit": -70865.84, "orders": 600, "margin": -122.64}], "shipmode": [{"Ship Mode": "First Class", "avg_days": 2.18, "orders": 795, "revenue": 351750.74}, {"Ship Mode": "Same Day", "avg_days": 0.04, "orders": 266, "revenue": 129271.96}, {"Ship Mode": "Second Class", "avg_days": 3.24, "orders": 982, "revenue": 466671.11}, {"Ship Mode": "Standard Class", "avg_days": 5.0, "orders": 3068, "revenue": 1378840.55}], "top_customers": [{"Customer Name": "Sean Miller", "Segment": "Home Office", "revenue": 25043.05, "profit": -1980.74, "orders": 5}, {"Customer Name": "Tamara Chand", "Segment": "Corporate", "revenue": 19052.22, "profit": 8981.32, "orders": 5}, {"Customer Name": "Raymond Buch", "Segment": "Consumer", "revenue": 15117.34, "profit": 6976.1, "orders": 6}, {"Customer Name": "Tom Ashbrook", "Segment": "Home Office", "revenue": 14595.62, "profit": 4703.79, "orders": 4}, {"Customer Name": "Adrian Barton", "Segment": "Consumer", "revenue": 14473.57, "profit": 5444.81, "orders": 10}, {"Customer Name": "Ken Lonsdale", "Segment": "Consumer", "revenue": 14175.23, "profit": 806.85, "orders": 12}, {"Customer Name": "Sanjit Chand", "Segment": "Consumer", "revenue": 14142.33, "profit": 5757.41, "orders": 9}, {"Customer Name": "Hunter Lopez", "Segment": "Consumer", "revenue": 12873.3, "profit": 5622.43, "orders": 6}, {"Customer Name": "Sanjit Engle", "Segment": "Consumer", "revenue": 12209.44, "profit": 2650.68, "orders": 11}, {"Customer Name": "Christopher Conant", "Segment": "Consumer", "revenue": 12129.07, "profit": 2177.05, "orders": 5}], "top_products": [{"Product Name": "Canon imageCLASS 2200 Advanced Copier", "Category": "Technology", "revenue": 61599.82, "profit": 25199.93}, {"Product Name": "Fellowes PB500 Electric Punch Plastic Comb Binding Machine with Manual Bind", "Category": "Office Supplies", "revenue": 27453.38, "profit": 7753.04}, {"Product Name": "Hewlett Packard LaserJet 3310 Copier", "Category": "Technology", "revenue": 18839.69, "profit": 6983.88}, {"Product Name": "Canon PC1060 Personal Laser Copier", "Category": "Technology", "revenue": 11619.83, "profit": 4570.93}, {"Product Name": "HP Designjet T520 Inkjet Large Format Printer - 24\" Color", "Category": "Technology", "revenue": 18374.9, "profit": 4094.98}, {"Product Name": "Ativa V4110MDD Micro-Cut Shredder", "Category": "Technology", "revenue": 7699.89, "profit": 3772.95}, {"Product Name": "3D Systems Cube Printer, 2nd Generation, Magenta", "Category": "Technology", "revenue": 14299.89, "profit": 3717.97}, {"Product Name": "Plantronics Savi W720 Multi-Device Wireless Headset System", "Category": "Technology", "revenue": 9367.29, "profit": 3696.28}, {"Product Name": "Ibico EPK-21 Electric Binding System", "Category": "Office Supplies", "revenue": 15875.92, "profit": 3345.28}, {"Product Name": "Zebra ZM400 Thermal Label Printer", "Category": "Technology", "revenue": 6965.7, "profit": 3343.54}], "bottom_products": [{"Product Name": "Cubify CubeX 3D Printer Double Head Print", "Category": "Technology", "revenue": 11099.96, "profit": -8879.97}, {"Product Name": "Lexmark MX611dhe Monochrome Laser Printer", "Category": "Technology", "revenue": 16829.9, "profit": -4589.97}, {"Product Name": "Cubify CubeX 3D Printer Triple Head Print", "Category": "Technology", "revenue": 7999.98, "profit": -3839.99}, {"Product Name": "Chromcraft Bull-Nose Wood Oval Conference Tables & Bases", "Category": "Furniture", "revenue": 9917.64, "profit": -2876.12}, {"Product Name": "Bush Advantage Collection Racetrack Conference Table", "Category": "Furniture", "revenue": 9544.72, "profit": -1934.4}, {"Product Name": "GBC DocuBind P400 Electric Binding System", "Category": "Office Supplies", "revenue": 17965.07, "profit": -1878.17}, {"Product Name": "Cisco TelePresence System EX90 Videoconferencing Unit", "Category": "Technology", "revenue": 22638.48, "profit": -1811.08}, {"Product Name": "Martin Yale Chadless Opener Electric Letter Opener", "Category": "Office Supplies", "revenue": 16656.2, "profit": -1299.18}, {"Product Name": "Balt Solid Wood Round Tables", "Category": "Furniture", "revenue": 6518.75, "profit": -1201.06}, {"Product Name": "BoxOffice By Design Rectangular and Half-Moon Meeting Room Tables", "Category": "Furniture", "revenue": 1706.25, "profit": -1148.44}], "state": [{"State/Province": "California", "revenue": 457687.63, "profit": 76381.39}, {"State/Province": "New York", "revenue": 310876.27, "profit": 74038.55}, {"State/Province": "Texas", "revenue": 170188.05, "profit": -25729.36}, {"State/Province": "Washington", "revenue": 138641.27, "profit": 33402.65}, {"State/Province": "Pennsylvania", "revenue": 116511.91, "profit": -15559.96}, {"State/Province": "Florida", "revenue": 89473.71, "profit": -3399.3}, {"State/Province": "Illinois", "revenue": 80166.1, "profit": -12607.89}, {"State/Province": "Ohio", "revenue": 78258.14, "profit": -16971.38}, {"State/Province": "Michigan", "revenue": 76269.61, "profit": 24463.19}, {"State/Province": "Virginia", "revenue": 70636.72, "profit": 18597.95}, {"State/Province": "North Carolina", "revenue": 55603.16, "profit": -7490.91}, {"State/Province": "Indiana", "revenue": 53555.36, "profit": 18382.94}, {"State/Province": "Georgia", "revenue": 49095.84, "profit": 16250.04}, {"State/Province": "Kentucky", "revenue": 36591.75, "profit": 11199.7}, {"State/Province": "New Jersey", "revenue": 35764.31, "profit": 9772.91}, {"State/Province": "Arizona", "revenue": 35282.0, "profit": -3427.92}, {"State/Province": "Wisconsin", "revenue": 32114.61, "profit": 8401.8}, {"State/Province": "Colorado", "revenue": 32108.12, "profit": -6527.86}, {"State/Province": "Tennessee", "revenue": 30661.87, "profit": -5341.69}, {"State/Province": "Minnesota", "revenue": 29863.15, "profit": 10823.19}, {"State/Province": "Massachusetts", "revenue": 28634.43, "profit": 6785.5}, {"State/Province": "Delaware", "revenue": 27451.07, "profit": 9977.37}, {"State/Province": "Maryland", "revenue": 23705.52, "profit": 7031.18}, {"State/Province": "Rhode Island", "revenue": 22627.96, "profit": 7285.63}, {"State/Province": "Missouri", "revenue": 22205.15, "profit": 6436.21}, {"State/Province": "Oklahoma", "revenue": 19683.39, "profit": 4853.96}, {"State/Province": "Alabama", "revenue": 19510.64, "profit": 5786.83}, {"State/Province": "Oregon", "revenue": 17431.15, "profit": -1190.47}, {"State/Province": "Nevada", "revenue": 16729.1, "profit": 3316.77}, {"State/Province": "Connecticut", "revenue": 13384.36, "profit": 3511.49}, {"State/Province": "Arkansas", "revenue": 11678.13, "profit": 4008.69}, {"State/Province": "Alberta", "revenue": 11460.19, "profit": 2236.16}, {"State/Province": "Utah", "revenue": 11220.06, "profit": 2546.53}, {"State/Province": "Mississippi", "revenue": 10771.34, "profit": 3172.98}, {"State/Province": "Louisiana", "revenue": 9217.03, "profit": 2196.1}, {"State/Province": "Vermont", "revenue": 8929.37, "profit": 2244.98}, {"State/Province": "South Carolina", "revenue": 8481.71, "profit": 1769.06}, {"State/Province": "Nebraska", "revenue": 7464.93, "profit": 2037.09}, {"State/Province": "New Hampshire", "revenue": 7292.52, "profit": 1706.5}, {"State/Province": "Ontario", "revenue": 7009.01, "profit": 1880.4}, {"State/Province": "Montana", "revenue": 5589.35, "profit": 1833.33}, {"State/Province": "New Mexico", "revenue": 4783.52, "profit": 1157.12}, {"State/Province": "Iowa", "revenue": 4579.76, "profit": 1183.81}, {"State/Province": "Idaho", "revenue": 4382.49, "profit": 826.72}, {"State/Province": "Quebec", "revenue": 3826.96, "profit": 1090.94}, {"State/Province": "Kansas", "revenue": 2914.31, "profit": 836.44}, {"State/Province": "District of Columbia", "revenue": 2865.02, "profit": 1059.59}, {"State/Province": "British Columbia", "revenue": 2763.2, "profit": 115.67}, {"State/Province": "Manitoba", "revenue": 1930.78, "profit": 158.94}, {"State/Province": "Wyoming", "revenue": 1603.14, "profit": 100.2}, {"State/Province": "South Dakota", "revenue": 1315.56, "profit": 394.83}, {"State/Province": "Maine", "revenue": 1270.53, "profit": 454.49}, {"State/Province": "West Virginia", "revenue": 1209.82, "profit": 185.92}, {"State/Province": "Prince Edward Island", "revenue": 1087.92, "profit": 329.35}, {"State/Province": "North Dakota", "revenue": 919.91, "profit": 230.15}, {"State/Province": "Newfoundland and Labrador", "revenue": 515.2, "profit": 186.68}, {"State/Province": "Nova Scotia", "revenue": 382.14, "profit": -52.74}, {"State/Province": "New Brunswick", "revenue": 225.7, "profit": -74.14}, {"State/Province": "Saskatchewan", "revenue": 132.4, "profit": 28.54}], "returns": [{"Is Returned": false, "revenue": 2146030.08, "profit": 269064.45, "orders": 4815}, {"Is Returned": true, "revenue": 180504.28, "profit": 23232.36, "orders": 296}]};
+const fmt$ = n => '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits:0});
+const fmtPct = n => Number(n).toFixed(1) + '%';
+
+// ---- KPI strip (renders regardless of chart library) ----
+const k = DATA.kpis;
+const kpiHtml = [
+  ['Total Revenue', fmt$(k.revenue), null],
+  ['Total Profit', fmt$(k.profit), k.profit>=0?'pos':'neg'],
+  ['Overall Margin', fmtPct(k.margin), k.margin>=0?'pos':'neg'],
+  ['Orders', k.orders.toLocaleString(), null],
+  ['Customers', k.customers.toLocaleString(), null],
+  ['Avg. Order Value', fmt$(k.aov), null],
+].map(([label,val,cls])=>`<div class="kpi"><div class="label">${label}</div><div class="value ${cls||''}">${val}</div></div>`).join('');
+document.getElementById('kpiStrip').innerHTML = kpiHtml;
+
+document.title = "Superstore Sales Performance & Revenue Analytics";
+
+// fill header placeholders
+document.querySelectorAll('.title-block p').forEach(el=>{
+  el.innerHTML = el.innerHTML.replace('5111', k.orders.toLocaleString()).replace('804', k.customers.toLocaleString());
+});
+document.querySelector('.range').innerHTML = document.querySelector('.range').innerHTML
+  .replace('2023-01-03', k.date_min).replace('2026-12-30', k.date_max);
+document.querySelector('footer').innerHTML = document.querySelector('footer').innerHTML
+  .replace('5111', k.orders.toLocaleString());
+
+// YoY figure
+const y = DATA.yearly;
+const last = y[y.length-1], prev = y[y.length-2];
+const yoy = prev ? (((last.revenue-prev.revenue)/prev.revenue)*100).toFixed(1)+'%' : '';
+document.querySelectorAll('.insight').forEach(el=>{ el.innerHTML = el.innerHTML.replace('__YOY__', 'grew ' + yoy); });
+
+// ---- Nav ----
+document.querySelectorAll('nav button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+  });
+});
+
+// ---- Charts: wait for the charting library, don't assume script execution order ----
+function initCharts() {
+  const CSS = getComputedStyle(document.documentElement);
+  const cVar = n => CSS.getPropertyValue(n).trim();
+  Chart.defaults.font.family = "Inter, sans-serif";
+  Chart.defaults.color = cVar('--muted');
+  Chart.defaults.borderColor = cVar('--line');
+  const accent = cVar('--accent'), loss = cVar('--loss'), gold = cVar('--gold'), line = cVar('--line'), ink = cVar('--ink');
+
+  new Chart(document.getElementById('chartMonthly'), {
+    type:'line',
+    data:{ labels: DATA.monthly.map(d=>d['Order Year-Month']),
+      datasets:[
+        {label:'Revenue', data: DATA.monthly.map(d=>d.revenue), borderColor: ink, backgroundColor: 'transparent', tension:.25, borderWidth:2, pointRadius:0},
+        {label:'Profit', data: DATA.monthly.map(d=>d.profit), borderColor: accent, backgroundColor: 'transparent', tension:.25, borderWidth:2, pointRadius:0}
+      ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'top', align:'end', labels:{boxWidth:10}}},
+      scales:{ x:{ticks:{maxTicksLimit:12}, grid:{display:false}}, y:{ticks:{callback:v=>fmt$(v)}} } }
+  });
+
+  new Chart(document.getElementById('chartRegion'), {
+    type:'bar',
+    data:{ labels: DATA.region.map(d=>d.Region),
+      datasets:[{label:'Revenue', data: DATA.region.map(d=>d.revenue), backgroundColor: accent, borderRadius:2}]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{callback:v=>fmt$(v)}}, y:{grid:{display:false}} } }
+  });
+
+  new Chart(document.getElementById('chartCategory'), {
+    type:'doughnut',
+    data:{ labels: DATA.category.map(d=>d.Category),
+      datasets:[{data: DATA.category.map(d=>d.revenue), backgroundColor:[ink, accent, gold]}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10}}} }
+  });
+
+  new Chart(document.getElementById('chartDiscount'), {
+    type:'bar',
+    data:{ labels: DATA.discount.map(d=>d.discount_band),
+      datasets:[{label:'Margin %', data: DATA.discount.map(d=>d.margin),
+        backgroundColor: DATA.discount.map(d=>d.margin>=0?accent:loss), borderRadius:2}]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{ y:{ticks:{callback:v=>v+'%'}}, x:{grid:{display:false}} } }
+  });
+
+  new Chart(document.getElementById('chartShip'), {
+    type:'bar',
+    data:{ labels: DATA.shipmode.map(d=>d['Ship Mode']),
+      datasets:[
+        {label:'Avg days to ship', data: DATA.shipmode.map(d=>d.avg_days), backgroundColor: gold, yAxisID:'y', borderRadius:2},
+      ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{ y:{title:{display:true,text:'Days'}}, x:{grid:{display:false}} } }
+  });
+
+  new Chart(document.getElementById('chartSegment'), {
+    type:'pie',
+    data:{ labels: DATA.segment.map(d=>d.Segment),
+      datasets:[{data: DATA.segment.map(d=>d.revenue), backgroundColor:[accent, ink, gold]}]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10}}} }
+  });
+}
+
+function showChartFallback() {
+  document.querySelectorAll('.chart-wrap').forEach(el=>{
+    el.innerHTML = '<p style="color:var(--muted); font-size:.8rem; padding-top:1rem;">Charts couldn\'t load (the charting library didn\'t come through from the CDN). The KPIs and tables on this page are unaffected. Try reloading, or disabling any script/content blockers for this page.</p>';
+  });
+}
+
+// Poll for the library rather than assuming <script> execution order.
+// Handles the case where the browser doesn't block on external scripts
+// the way a plain HTML page normally would.
+(function waitForChart(attemptsLeft) {
+  if (typeof Chart !== 'undefined') { initCharts(); return; }
+  if (window.__chartLoadFailed) { showChartFallback(); return; }
+  if (attemptsLeft <= 0) { showChartFallback(); return; }
+  setTimeout(() => waitForChart(attemptsLeft - 1), 150);
+})(40); // ~6 seconds total
+
+// ---- Tables ----
+function rows(sel, data, mapper){
+  document.querySelector(sel+' tbody').innerHTML = data.map(mapper).join('');
+}
+
+rows('#tblSubcat', DATA.subcat, d=>`<tr>
+  <td>${d.Category}</td><td>${d['Sub-Category']}</td>
+  <td class="num">${fmt$(d.revenue)}</td>
+  <td class="num ${d.profit>=0?'pos-text':'neg-text'}">${fmt$(d.profit)}</td>
+  <td class="num ${d.margin>=0?'pos-text':'neg-text'}">${fmtPct(d.margin)}</td>
+</tr>`);
+
+rows('#tblCustomers', DATA.top_customers, d=>`<tr>
+  <td>${d['Customer Name']}</td><td>${d.Segment}</td>
+  <td class="num">${fmt$(d.revenue)}</td>
+  <td class="num ${d.profit>=0?'pos-text':'neg-text'}">${fmt$(d.profit)}</td>
+  <td class="num">${d.orders}</td>
+</tr>`);
+
+rows('#tblTopProducts', DATA.top_products, d=>`<tr>
+  <td>${d['Product Name']}</td>
+  <td class="num">${fmt$(d.revenue)}</td>
+  <td class="num pos-text">${fmt$(d.profit)}</td>
+</tr>`);
+
+rows('#tblBottomProducts', DATA.bottom_products, d=>`<tr>
+  <td>${d['Product Name']}</td>
+  <td class="num">${fmt$(d.revenue)}</td>
+  <td class="num neg-text">${fmt$(d.profit)}</td>
+</tr>`);
+
+rows('#tblState', DATA.state, d=>`<tr>
+  <td>${d['State/Province']}</td>
+  <td class="num">${fmt$(d.revenue)}</td>
+  <td class="num ${d.profit>=0?'pos-text':'neg-text'}">${fmt$(d.profit)}</td>
+</tr>`);
+</script>
+</body>
+</html>
