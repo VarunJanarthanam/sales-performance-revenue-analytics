@@ -2,7 +2,7 @@
 
 An end-to-end retail analytics project that cleans and validates order data, analyzes business questions with SQL and Python, and presents the results in an interactive dashboard.
 
-**[View the live interactive dashboard](https://claude.ai/artifact/AK5NWqjUj7QxhY582p6Rby)**
+**[→ View the live interactive dashboard](https://VarunJanarthanam.github.io/sales-performance-revenue-analytics/dashboard/superstore_dashboard.html)**
 
 ## Project Overview
 
